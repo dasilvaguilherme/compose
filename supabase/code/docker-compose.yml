@@ -12,6 +12,8 @@ services:
   studio:
     image: supabase/studio:2025.05.19-sha-3487831
     restart: unless-stopped
+    mem_limit: 1024m
+    cpus: 1.5
     healthcheck:
       test:
         [
@@ -52,6 +54,8 @@ services:
   kong:
     image: kong:2.8.1
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.25
     volumes:
       # https://github.com/supabase/supabase/issues/12661
       - ./volumes/api/kong.yml:/home/kong/temp.yml:ro,z
@@ -77,6 +81,8 @@ services:
   auth:
     image: supabase/gotrue:v2.172.1
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.25
     healthcheck:
       test:
         [
@@ -159,6 +165,8 @@ services:
   rest:
     image: postgrest/postgrest:v12.2.12
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.25
     depends_on:
       db:
         # Disable this if you are using an external Postgres database
@@ -179,6 +187,8 @@ services:
     # This container name looks inconsistent but is correct because realtime constructs tenant id by parsing the subdomain
     image: supabase/realtime:v2.34.47
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
     depends_on:
       db:
         # Disable this if you are using an external Postgres database
@@ -223,6 +233,8 @@ services:
   storage:
     image: supabase/storage-api:v1.22.17
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
     volumes:
       - ./volumes/storage:/var/lib/storage:z
     healthcheck:
@@ -265,6 +277,8 @@ services:
   imgproxy:
     image: darthsim/imgproxy:v3.8.0
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.1
     volumes:
       - ./volumes/storage:/var/lib/storage:z
     healthcheck:
@@ -281,11 +295,13 @@ services:
   meta:
     image: supabase/postgres-meta:v0.89.0
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.1
     depends_on:
       db:
         # Disable this if you are using an external Postgres database
         condition: service_healthy
-      analytics:
+      :
         condition: service_healthy
     environment:
       PG_META_PORT: 8080
@@ -298,10 +314,12 @@ services:
   functions:
     image: supabase/edge-runtime:v1.67.4
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.25
     volumes:
       - ./volumes/functions:/home/deno/functions:Z
     depends_on:
-      analytics:
+      :
         condition: service_healthy
     environment:
       JWT_SECRET: ${JWT_SECRET}
@@ -316,6 +334,8 @@ services:
   analytics:
     image: supabase/logflare:1.12.0
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
     # Uncomment to use Big Query backend for analytics
     # volumes:
     #   - type: bind
@@ -356,6 +376,8 @@ services:
   db:
     image: supabase/postgres:15.8.1.060
     restart: unless-stopped
+    mem_limit: 1024m
+    cpus: 1.5
     volumes:
       - ./volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
       # Must be superuser to create event trigger
@@ -404,6 +426,8 @@ services:
   vector:
     image: timberio/vector:0.28.1-alpine
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.1
     volumes:
       - ./volumes/logs/vector.yml:/etc/vector/vector.yml:ro,z
       - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
@@ -430,6 +454,8 @@ services:
   supavisor:
     image: supabase/supavisor:2.5.1
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
     volumes:
       - ./volumes/pooler/pooler.exs:/etc/pooler/pooler.exs:ro,z
     healthcheck:
