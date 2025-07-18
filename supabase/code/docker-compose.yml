@@ -10,58 +10,17 @@ services:
       POSTGRES_PASSWORD: supabase123
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
-    volumes:
-      - db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-    # Script inline SIMPLES que funciona
-    command: |
-      bash -c "
-      # Função para executar SQL quando postgres estiver pronto
-      init_db() {
-        echo 'Aguardando PostgreSQL...'
-        while ! pg_isready -U postgres > /dev/null 2>&1; do
-          sleep 1
-        done
-        echo 'PostgreSQL pronto, criando bancos...'
-        
-        # Criar bancos necessários
-        psql -U postgres -c \"CREATE DATABASE IF NOT EXISTS supabase;\" || true
-        psql -U postgres -c \"CREATE DATABASE \\\"_supabase\\\";\" || true
-        
-        # Criar usuários necessários
-        psql -U postgres -c \"CREATE USER supabase_admin WITH PASSWORD 'supabase123' SUPERUSER;\" || true
-        psql -U postgres -c \"CREATE USER authenticator WITH PASSWORD 'supabase123';\" || true
-        psql -U postgres -c \"CREATE USER anon;\" || true
-        psql -U postgres -c \"CREATE USER authenticated;\" || true
-        psql -U postgres -c \"CREATE USER service_role;\" || true
-        
-        # Configurar banco _supabase
-        psql -U postgres -d _supabase -c \"CREATE SCHEMA IF NOT EXISTS _analytics;\" || true
-        psql -U postgres -d _supabase -c \"GRANT ALL ON SCHEMA _analytics TO supabase_admin;\" || true
-        
-        # Configurar banco supabase
-        psql -U postgres -d supabase -c \"CREATE EXTENSION IF NOT EXISTS pgcrypto;\" || true
-        psql -U postgres -d supabase -c \"CREATE SCHEMA IF NOT EXISTS auth;\" || true
-        psql -U postgres -d supabase -c \"GRANT ALL ON SCHEMA auth TO supabase_admin;\" || true
-        
-        echo 'Bancos criados com sucesso!'
-      }
-      
-      # Iniciar postgres em background
-      postgres &
-      PG_PID=\$!
-      
-      # Aguardar e configurar bancos
-      init_db
-      
-      # Manter postgres em foreground
-      wait \$PG_PID
-      "
+    # Script de inicialização usando entrypoint padrão
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    command: ["postgres"]
     networks:
       - traefik
 
