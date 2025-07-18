@@ -449,9 +449,7 @@ services:
       exec postgres -c config_file=/etc/postgresql/postgresql.conf -c log_min_messages=fatal
       "
 
-#
-    networks:
-        - traefik
+
   # Update the DATABASE_URL if you are using an external Postgres database
   supavisor:
     image: supabase/supavisor:2.5.1
