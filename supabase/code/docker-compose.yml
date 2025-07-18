@@ -422,7 +422,7 @@ services:
     cpus: 0.1
     volumes:
       - ./volumes/logs/vector.yml:/etc/vector/vector.yml:ro,z
-      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
+      - /var/run/docker.sock:/var/run/docker.sock:ro,z
     healthcheck:
       test:
         [
@@ -439,6 +439,8 @@ services:
     environment:
       LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
     command: [ "--config", "/etc/vector/vector.yml" ]
+    user:
+      - "root"
     security_opt:
       - "label=disable"
 
