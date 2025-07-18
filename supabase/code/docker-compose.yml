@@ -364,7 +364,8 @@ services:
       # Uncomment to use Big Query backend for analytics
       # GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID}
       # GOOGLE_PROJECT_NUMBER: ${GOOGLE_PROJECT_NUMBER}
-
+    networks:
+      - traefik
       # Comment out everything below this point if you are using an external Postgres database
   db:
     image: supabase/postgres:15.8.1.060
@@ -382,7 +383,7 @@ services:
       # PGDATA directory is persisted between restarts
       - ./volumes/db/data:/var/lib/postgresql/data:Z
       # Changes required for internal supabase data such as _analytics
-      - ./volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:Z
+      #- ./volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:Z
       # Changes required for Analytics support
       - ./volumes/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:Z
       # Changes required for Pooler support
@@ -449,7 +450,8 @@ services:
       "
 
 #
-
+    networks:
+        - traefik
   # Update the DATABASE_URL if you are using an external Postgres database
   supavisor:
     image: supabase/supavisor:2.5.1
@@ -501,6 +503,8 @@ services:
         "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat
           /etc/pooler/pooler.exs)\" && /app/bin/server"
       ]
+      networks:
+        - traefik
 
 volumes:
   db-config:
