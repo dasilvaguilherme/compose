@@ -1,142 +1,75 @@
 version: '3.8'
 
 services:
-  # PostgreSQL com criação automática dos bancos
+  # PostgreSQL básico e funcional
   db:
     container_name: supabase-db
-    image: supabase/postgres:15.8.1.060
+    image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_HOST: /var/run/postgresql
-      POSTGRES_PORT: 5432
       POSTGRES_PASSWORD: supabase123
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
-      JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
-      JWT_EXP: 3600
     volumes:
       - db-data:/var/lib/postgresql/data
-      - db-config:/etc/postgresql-custom
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "0.0.0.0"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 5
+      start_period: 10s
+    # Script inline SIMPLES que funciona
     command: |
       bash -c "
-      # Criar diretório de scripts se não existir
-      mkdir -p /docker-entrypoint-initdb.d
-      
-      # Script para criar todos os bancos e usuários necessários
-      cat > /docker-entrypoint-initdb.d/01-setup-databases.sql << 'EOF'
-      -- Criar banco _supabase se não existir
-      DO \$\$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '_supabase') THEN
-          PERFORM dblink_exec('dbname=postgres', 'CREATE DATABASE _supabase');
-        END IF;
-      END
-      \$\$;
-      
-      -- Criar banco supabase se não existir  
-      DO \$\$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'supabase') THEN
-          PERFORM dblink_exec('dbname=postgres', 'CREATE DATABASE supabase');
-        END IF;
-      END
-      \$\$;
-      
-      -- Criar usuários necessários
-      DO \$\$
-      BEGIN
-        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'supabase_admin') THEN
-          CREATE ROLE supabase_admin WITH LOGIN PASSWORD 'supabase123' SUPERUSER CREATEDB CREATEROLE;
-        END IF;
+      # Função para executar SQL quando postgres estiver pronto
+      init_db() {
+        echo 'Aguardando PostgreSQL...'
+        while ! pg_isready -U postgres > /dev/null 2>&1; do
+          sleep 1
+        done
+        echo 'PostgreSQL pronto, criando bancos...'
         
-        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'supabase_auth_admin') THEN
-          CREATE ROLE supabase_auth_admin WITH LOGIN PASSWORD 'supabase123' CREATEDB CREATEROLE;
-        END IF;
+        # Criar bancos necessários
+        psql -U postgres -c \"CREATE DATABASE IF NOT EXISTS supabase;\" || true
+        psql -U postgres -c \"CREATE DATABASE \\\"_supabase\\\";\" || true
         
-        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'supabase_storage_admin') THEN
-          CREATE ROLE supabase_storage_admin WITH LOGIN PASSWORD 'supabase123' CREATEDB CREATEROLE;
-        END IF;
+        # Criar usuários necessários
+        psql -U postgres -c \"CREATE USER supabase_admin WITH PASSWORD 'supabase123' SUPERUSER;\" || true
+        psql -U postgres -c \"CREATE USER authenticator WITH PASSWORD 'supabase123';\" || true
+        psql -U postgres -c \"CREATE USER anon;\" || true
+        psql -U postgres -c \"CREATE USER authenticated;\" || true
+        psql -U postgres -c \"CREATE USER service_role;\" || true
         
-        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticator') THEN
-          CREATE ROLE authenticator WITH LOGIN PASSWORD 'supabase123' NOINHERIT CREATEROLE;
-        END IF;
+        # Configurar banco _supabase
+        psql -U postgres -d _supabase -c \"CREATE SCHEMA IF NOT EXISTS _analytics;\" || true
+        psql -U postgres -d _supabase -c \"GRANT ALL ON SCHEMA _analytics TO supabase_admin;\" || true
         
-        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
-          CREATE ROLE anon WITH NOLOGIN NOINHERIT;
-        END IF;
+        # Configurar banco supabase
+        psql -U postgres -d supabase -c \"CREATE EXTENSION IF NOT EXISTS pgcrypto;\" || true
+        psql -U postgres -d supabase -c \"CREATE SCHEMA IF NOT EXISTS auth;\" || true
+        psql -U postgres -d supabase -c \"GRANT ALL ON SCHEMA auth TO supabase_admin;\" || true
         
-        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
-          CREATE ROLE authenticated WITH NOLOGIN NOINHERIT;
-        END IF;
-        
-        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'service_role') THEN
-          CREATE ROLE service_role WITH NOLOGIN NOINHERIT BYPASSRLS;
-        END IF;
-      END
-      \$\$;
-      EOF
+        echo 'Bancos criados com sucesso!'
+      }
       
-      # Script específico para _supabase
-      cat > /docker-entrypoint-initdb.d/02-setup-supabase-db.sql << 'EOF'
-      \c _supabase;
+      # Iniciar postgres em background
+      postgres &
+      PG_PID=\$!
       
-      -- Criar schema _analytics
-      CREATE SCHEMA IF NOT EXISTS _analytics;
-      CREATE SCHEMA IF NOT EXISTS _realtime;
+      # Aguardar e configurar bancos
+      init_db
       
-      -- Dar permissões no banco _supabase
-      GRANT ALL PRIVILEGES ON DATABASE _supabase TO supabase_admin;
-      GRANT ALL ON SCHEMA _analytics TO supabase_admin;
-      GRANT ALL ON SCHEMA _realtime TO supabase_admin;
-      GRANT ALL ON ALL TABLES IN SCHEMA _analytics TO supabase_admin;
-      GRANT ALL ON ALL TABLES IN SCHEMA _realtime TO supabase_admin;
-      ALTER DEFAULT PRIVILEGES IN SCHEMA _analytics GRANT ALL ON TABLES TO supabase_admin;
-      ALTER DEFAULT PRIVILEGES IN SCHEMA _realtime GRANT ALL ON TABLES TO supabase_admin;
-      EOF
-      
-      # Script para banco supabase principal
-      cat > /docker-entrypoint-initdb.d/03-setup-main-db.sql << 'EOF'
-      \c supabase;
-      
-      -- Extensões básicas
-      CREATE EXTENSION IF NOT EXISTS pgcrypto;
-      CREATE EXTENSION IF NOT EXISTS pgjwt;
-      CREATE EXTENSION IF NOT EXISTS uuid-ossp;
-      
-      -- Schemas básicos
-      CREATE SCHEMA IF NOT EXISTS auth;
-      CREATE SCHEMA IF NOT EXISTS storage;
-      CREATE SCHEMA IF NOT EXISTS realtime;
-      CREATE SCHEMA IF NOT EXISTS _realtime;
-      
-      -- Dar permissões
-      GRANT ALL ON SCHEMA auth TO supabase_auth_admin;
-      GRANT ALL ON SCHEMA storage TO supabase_storage_admin;
-      GRANT ALL ON SCHEMA realtime TO supabase_admin;
-      GRANT ALL ON SCHEMA _realtime TO supabase_admin;
-      
-      -- Roles para authenticator
-      GRANT anon, authenticated, service_role TO authenticator;
-      EOF
-      
-      # Iniciar postgres
-      exec postgres -c config_file=/etc/postgresql/postgresql.conf -c log_min_messages=fatal
+      # Manter postgres em foreground
+      wait \$PG_PID
       "
     networks:
       - traefik
 
-  # Analytics - SEM dependência de outros serviços
+  # Analytics simplificado
   analytics:
     container_name: supabase-analytics
     image: supabase/logflare:1.12.0
     restart: unless-stopped
-    mem_limit: 512m
-    cpus: 0.5
     depends_on:
       db:
         condition: service_healthy
@@ -145,11 +78,10 @@ services:
       DB_USERNAME: supabase_admin
       DB_DATABASE: _supabase
       DB_HOSTNAME: db
-      DB_USER: supabase_admin
       DB_PORT: 5432
       DB_PASSWORD: supabase123
       DB_SCHEMA: _analytics
-      LOGFLARE_API_KEY: your-secret-logflare-api-key-here
+      LOGFLARE_API_KEY: your-secret-logflare-api-key
       LOGFLARE_SINGLE_TENANT: true
       LOGFLARE_SUPABASE_MODE: true
       LOGFLARE_MIN_CLUSTER_SIZE: 1
@@ -160,46 +92,12 @@ services:
       test: ["CMD", "curl", "http://0.0.0.0:4000/health"]
       timeout: 10s
       interval: 10s
-      retries: 5
-      start_period: 30s
-    networks:
-      - traefik
-
-  # Auth service
-  auth:
-    container_name: supabase-auth
-    image: supabase/gotrue:v2.172.1
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
-    environment:
-      GOTRUE_API_HOST: 0.0.0.0
-      GOTRUE_API_PORT: 9999
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:supabase123@db:5432/supabase
-      GOTRUE_SITE_URL: https://guinfra-supabase.cloudfy.cloud
-      GOTRUE_URI_ALLOW_LIST: ""
-      GOTRUE_DISABLE_SIGNUP: false
-      GOTRUE_JWT_ADMIN_ROLES: service_role
-      GOTRUE_JWT_AUD: authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_JWT_EXP: 3600
-      GOTRUE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: true
-      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: true
-      GOTRUE_MAILER_AUTOCONFIRM: true
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://0.0.0.0:9999/health"]
-      timeout: 5s
-      interval: 5s
       retries: 3
+      start_period: 45s
     networks:
       - traefik
 
-  # Meta API via Traefik
+  # Meta API
   meta:
     container_name: supabase-meta
     image: supabase/postgres-meta:v0.89.0
@@ -212,18 +110,13 @@ services:
       PG_META_DB_HOST: db
       PG_META_DB_PORT: 5432
       PG_META_DB_NAME: supabase
-      PG_META_DB_USER: supabase_admin
+      PG_META_DB_USER: postgres
       PG_META_DB_PASSWORD: supabase123
     networks:
       - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.guinfra-supabase-meta.rule=Host(`guinfra-supabase-meta.cloudfy.cloud`)"
-      - "traefik.http.routers.guinfra-supabase-meta.entrypoints=websecure"
-      - "traefik.http.routers.guinfra-supabase-meta.tls.certresolver=cloudflare"
-      - "traefik.http.services.guinfra-supabase-meta.loadbalancer.server.port=8080"
 
-  # API REST via Traefik
+
+  # API REST  
   rest:
     container_name: supabase-rest
     image: postgrest/postgrest:v12.2.12
@@ -232,101 +125,14 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGRST_DB_URI: postgres://authenticator:supabase123@db:5432/supabase
+      PGRST_DB_URI: postgres://postgres:supabase123@db:5432/supabase
       PGRST_DB_SCHEMAS: public
-      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_ANON_ROLE: postgres
       PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
-      PGRST_DB_USE_LEGACY_GUCS: "false"
-      PGRST_APP_SETTINGS_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
-      PGRST_APP_SETTINGS_JWT_EXP: 3600
     networks:
       - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.guinfra-supabase-api.rule=Host(`guinfra-supabase-api.cloudfy.cloud`)"
-      - "traefik.http.routers.guinfra-supabase-api.entrypoints=websecure"
-      - "traefik.http.routers.guinfra-supabase-api.tls.certresolver=cloudflare"
-      - "traefik.http.services.guinfra-supabase-api.loadbalancer.server.port=3000"
 
-  # Kong API Gateway
-  kong:
-    container_name: supabase-kong
-    image: kong:2.8.1
-    restart: unless-stopped
-    depends_on:
-      auth:
-        condition: service_healthy
-      rest:
-        condition: service_started
-      analytics:
-        condition: service_healthy
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /tmp/kong.yml
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
-      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
-      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
-    command: |
-      bash -c "
-      cat > /tmp/kong.yml << 'EOF'
-      _format_version: '3.0'
-      services:
-        - name: auth-v1-open
-          url: http://auth:9999/verify
-          routes:
-            - name: auth-v1-open
-              strip_path: true
-              paths:
-                - '/auth/v1/verify'
-        - name: auth-v1-open-callback
-          url: http://auth:9999/callback
-          routes:
-            - name: auth-v1-open-callback
-              strip_path: true
-              paths:
-                - '/auth/v1/callback'
-        - name: auth-v1-open-authorize
-          url: http://auth:9999/authorize
-          routes:
-            - name: auth-v1-open-authorize
-              strip_path: true
-              paths:
-                - '/auth/v1/authorize'
-        - name: auth-v1
-          url: http://auth:9999/
-          routes:
-            - name: auth-v1-all
-              strip_path: true
-              paths:
-                - '/auth/v1/'
-        - name: rest-v1
-          url: http://rest:3000/
-          routes:
-            - name: rest-v1-all
-              strip_path: true
-              paths:
-                - '/rest/v1/'
-        - name: meta
-          url: http://meta:8080/
-          routes:
-            - name: meta-all
-              strip_path: true
-              paths:
-                - '/pg/'
-      EOF
-      kong start
-      "
-    networks:
-      - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.guinfra-supabase-kong.rule=Host(`guinfra-supabase-kong.cloudfy.cloud`)"
-      - "traefik.http.routers.guinfra-supabase-kong.entrypoints=websecure"
-      - "traefik.http.routers.guinfra-supabase-kong.tls.certresolver=cloudflare"
-      - "traefik.http.services.guinfra-supabase-kong.loadbalancer.server.port=8000"
-
-  # Dashboard principal via Traefik
+  # Dashboard Studio
   studio:
     container_name: supabase-studio
     image: supabase/studio:latest
@@ -336,21 +142,14 @@ services:
         condition: service_healthy
       meta:
         condition: service_started
-      analytics:
-        condition: service_healthy
     environment:
       STUDIO_PG_META_URL: http://meta:8080
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_PUBLIC_URL: http://localhost:8000
-      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTY0MTc5NTIwMCwiZXhwIjoxOTU3MzcxMjAwfQ.fake-anon-key
-      SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QiLCJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNjQxNzk1MjAwLCJleHAiOjE5NTczNzEyMDB9.fake-service-key
       DEFAULT_ORGANIZATION_NAME: "Guinfra"
       DEFAULT_PROJECT_NAME: "Supabase Project"
       POSTGRES_PASSWORD: supabase123
-      NEXT_PUBLIC_ENABLE_LOGS: true
-      LOGFLARE_API_KEY: your-secret-logflare-api-key-here
-      LOGFLARE_URL: http://analytics:4000
-      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
+      # Configurações básicas
+      NEXT_PUBLIC_ENABLE_LOGS: false
+      NEXT_PUBLIC_ENABLE_REALTIME: false
     networks:
       - traefik
     labels:
@@ -362,7 +161,6 @@ services:
 
 volumes:
   db-data:
-  db-config:
 
 networks:
   traefik:
