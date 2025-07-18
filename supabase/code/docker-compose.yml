@@ -439,8 +439,7 @@ services:
     environment:
       LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
     command: [ "--config", "/etc/vector/vector.yml" ]
-    user:
-      - "root"
+    user: "root"
     security_opt:
       - "label=disable"
 
