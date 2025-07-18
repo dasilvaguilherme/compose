@@ -407,14 +407,46 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXP: ${JWT_EXPIRY}
-    command:
-      [
-        "postgres",
-        "-c",
-        "config_file=/etc/postgresql/postgresql.conf",
-        "-c",
-        "log_min_messages=fatal" # prevents Realtime polling queries from appearing in logs
-      ]
+    command: |
+      bash -c "
+      # Criar script de inicialização inline
+      cat > /docker-entrypoint-initdb.d/01-create-supabase-db.sql << 'EOF'
+      -- Criar banco _supabase se não existir
+      SELECT 'CREATE DATABASE _supabase' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '_supabase')\\gexec
+      
+      -- Conectar ao banco _supabase e criar schemas necessários
+      \\c _supabase;
+      
+      -- Criar schema _analytics
+      CREATE SCHEMA IF NOT EXISTS _analytics;
+      
+      -- Criar usuário supabase_admin se não existir
+      DO \\$$
+      BEGIN
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'supabase_admin') THEN
+          CREATE ROLE supabase_admin WITH LOGIN PASSWORD 'supabase123';
+        END IF;
+      END
+      \\$$;
+      
+      -- Dar permissões
+      GRANT ALL PRIVILEGES ON DATABASE _supabase TO supabase_admin;
+      GRANT ALL ON SCHEMA _analytics TO supabase_admin;
+      GRANT ALL ON ALL TABLES IN SCHEMA _analytics TO supabase_admin;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA _analytics GRANT ALL ON TABLES TO supabase_admin;
+      
+      -- Criar banco supabase se não existir
+      \\c postgres;
+      SELECT 'CREATE DATABASE supabase' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'supabase')\\gexec
+      
+      -- Configurações básicas do supabase
+      \\c supabase;
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
+      EOF
+      
+      # Iniciar postgres
+      exec postgres -c config_file=/etc/postgresql/postgresql.conf -c log_min_messages=fatal
+      "
 
 #
 
