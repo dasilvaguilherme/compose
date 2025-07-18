@@ -10,17 +10,15 @@ services:
       POSTGRES_PASSWORD: supabase123
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
-    healthcheck:
+        healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-    # Script de inicialização usando entrypoint padrão
+    # Usar PostgreSQL padrão sem customizações
     volumes:
       - db-data:/var/lib/postgresql/data
-      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
-    command: ["postgres"]
     networks:
       - traefik
 
@@ -32,21 +30,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      LOGFLARE_NODE_HOST: 0.0.0.0
-      DB_USERNAME: supabase_admin
-      DB_DATABASE: _supabase
-      DB_HOSTNAME: db
-      DB_PORT: 5432
-      DB_PASSWORD: supabase123
-      DB_SCHEMA: _analytics
-      LOGFLARE_API_KEY: your-secret-logflare-api-key
-      LOGFLARE_SINGLE_TENANT: true
-      LOGFLARE_SUPABASE_MODE: true
-      LOGFLARE_MIN_CLUSTER_SIZE: 1
-      POSTGRES_BACKEND_URL: postgresql://supabase_admin:supabase123@db:5432/_supabase
-      POSTGRES_BACKEND_SCHEMA: _analytics
-      LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=true
+         environment:
+       LOGFLARE_NODE_HOST: 0.0.0.0
+       DB_USERNAME: postgres
+       DB_DATABASE: postgres
+       DB_HOSTNAME: db
+       DB_PORT: 5432
+       DB_PASSWORD: supabase123
+       DB_SCHEMA: public
+       LOGFLARE_API_KEY: your-secret-logflare-api-key
+       LOGFLARE_SINGLE_TENANT: true
+       LOGFLARE_SUPABASE_MODE: true
+       LOGFLARE_MIN_CLUSTER_SIZE: 1
+       POSTGRES_BACKEND_URL: postgresql://postgres:supabase123@db:5432/postgres
+       POSTGRES_BACKEND_SCHEMA: public
+       LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=true
     healthcheck:
       test: ["CMD", "curl", "http://0.0.0.0:4000/health"]
       timeout: 10s
@@ -64,13 +62,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      PG_META_PORT: 8080
-      PG_META_DB_HOST: db
-      PG_META_DB_PORT: 5432
-      PG_META_DB_NAME: supabase
-      PG_META_DB_USER: postgres
-      PG_META_DB_PASSWORD: supabase123
+         environment:
+       PG_META_PORT: 8080
+       PG_META_DB_HOST: db
+       PG_META_DB_PORT: 5432
+       PG_META_DB_NAME: postgres
+       PG_META_DB_USER: postgres
+       PG_META_DB_PASSWORD: supabase123
     networks:
       - traefik
 
@@ -83,11 +81,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      PGRST_DB_URI: postgres://postgres:supabase123@db:5432/supabase
-      PGRST_DB_SCHEMAS: public
-      PGRST_DB_ANON_ROLE: postgres
-      PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+         environment:
+       PGRST_DB_URI: postgres://postgres:supabase123@db:5432/postgres
+       PGRST_DB_SCHEMAS: public
+       PGRST_DB_ANON_ROLE: postgres
+       PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
     networks:
       - traefik
 
